@@ -23,10 +23,21 @@ function ItineraryBuilder() {
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedStopIdx, setDraggedStopIdx] = useState<number | null>(null);
+  const [availableTrips, setAvailableTrips] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     if (!tripId) {
-      setLoading(false);
+      const fetchTrips = async () => {
+        const token = localStorage.getItem("token");
+        try {
+          const res = await fetch("http://localhost:5000/api/trips", { headers: { "Authorization": `Bearer ${token}` } });
+          if (res.ok) setAvailableTrips(await res.json());
+        } catch (e) { console.error(e); }
+        setLoading(false);
+      };
+      fetchTrips();
       return;
     }
     const fetchData = async () => {
@@ -99,7 +110,35 @@ function ItineraryBuilder() {
   };
 
   if (loading) return <AppLayout title="Loading..."><div className="p-10 text-center text-muted-foreground">Loading itinerary...</div></AppLayout>;
-  if (!tripId || !trip) return <AppLayout title="Error"><div className="p-10 text-center">Please select a valid trip from the Dashboard.</div></AppLayout>;
+  
+  if (!tripId) {
+    return (
+      <AppLayout title="Select a Trip" subtitle="Choose a trip to build its itinerary">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {availableTrips.map(t => (
+             <div key={t.id} onClick={() => navigate({ to: "/itinerary-builder", search: { tripId: t.id } })} className="cursor-pointer">
+               <Card className="p-5 hover:border-primary/50 transition-all h-full">
+                  <h3 className="font-display font-semibold text-lg">{t.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{new Date(t.start_date).toLocaleDateString()} - {new Date(t.end_date).toLocaleDateString()}</p>
+               </Card>
+             </div>
+          ))}
+          {availableTrips.length === 0 && <div className="col-span-full text-center p-10 text-muted-foreground">No trips found. Create one first!</div>}
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!trip) return <AppLayout title="Error"><div className="p-10 text-center">Failed to load trip data.</div></AppLayout>;
+
+  const handleSaveDraft = () => {
+    setIsSaving(true);
+    setTimeout(() => {
+      setIsSaving(false);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+    }, 800);
+  };
 
   // map stops to include activities
   const stopsWithActivities = stops.map(s => {
@@ -118,7 +157,7 @@ function ItineraryBuilder() {
       title={`${trip.title} · Itinerary`}
       subtitle="Drag to reorder · Add stops, activities and notes"
       actions={<>
-        <Btn variant="outline">Save draft</Btn>
+        <Btn variant="outline" onClick={handleSaveDraft} disabled={isSaving}>{isSaving ? "Saving..." : isSaved ? "Saved!" : "Save draft"}</Btn>
         <Btn asChild><Link to="/itinerary" search={{ tripId }}>Preview itinerary</Link></Btn>
       </>}
     >

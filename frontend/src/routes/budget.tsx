@@ -25,6 +25,9 @@ function BudgetPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [availableTrips, setAvailableTrips] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,7 +39,7 @@ function BudgetPage() {
           const res = await fetch("http://localhost:5000/api/trips", { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) {
             const trips = await res.json();
-            if (trips.length > 0) return navigate({ search: { tripId: trips[0].id }, replace: true });
+            setAvailableTrips(trips);
           }
         } catch (e) { console.error(e); }
         return setLoading(false);
@@ -57,7 +60,50 @@ function BudgetPage() {
   }, [tripId, navigate]);
 
   if (loading) return <AppLayout title="Loading..."><div className="p-10 text-center text-muted-foreground">Loading budget...</div></AppLayout>;
-  if (!tripId || !data) return <AppLayout title="Error"><div className="p-10 text-center">Please select a valid trip from the Dashboard.</div></AppLayout>;
+  
+  if (!tripId) {
+    return (
+      <AppLayout title="Select a Trip" subtitle="Choose a trip to view its budget">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {availableTrips.map(t => (
+             <div key={t.id} onClick={() => navigate({ to: "/budget", search: { tripId: t.id } })} className="cursor-pointer">
+               <Card className="p-5 hover:border-primary/50 transition-all h-full">
+                  <h3 className="font-display font-semibold text-lg">{t.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{new Date(t.start_date).toLocaleDateString()} - {new Date(t.end_date).toLocaleDateString()}</p>
+               </Card>
+             </div>
+          ))}
+          {availableTrips.length === 0 && <div className="col-span-full text-center p-10 text-muted-foreground">No trips found. Create one first!</div>}
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!data) return <AppLayout title="Error"><div className="p-10 text-center">Failed to load budget data.</div></AppLayout>;
+
+  const handleEditBudget = async () => {
+    const newBudget = prompt("Enter new budget limit:", data.budget_range);
+    if (newBudget && !isNaN(Number(newBudget))) {
+      setData({ ...data, budget_range: Number(newBudget) });
+      const token = localStorage.getItem("token");
+      try {
+        await fetch(`http://localhost:5000/api/trips/${tripId}/budget`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ budgetRange: Number(newBudget) })
+        });
+      } catch (e) { console.error(e); }
+    }
+  };
+
+  const handleSave = () => {
+    setIsSaving(true);
+    setTimeout(() => {
+      setIsSaving(false);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+    }, 800);
+  };
 
   const total = data.categories.reduce((s: number, c: any) => s + Number(c.total_cost), 0) || 0;
   const limit = Number(data.budget_range) || 3500;
@@ -82,7 +128,7 @@ function BudgetPage() {
     <AppLayout
       title={`Trip budget · ${data.trip_title}`}
       subtitle="Track estimates, stay under your limit and adjust as you plan"
-      actions={<><Btn variant="outline"><Edit3 className="h-4 w-4" /> Edit budget</Btn><Btn><Save className="h-4 w-4" /> Save</Btn></>}
+      actions={<><Btn variant="outline" onClick={handleEditBudget}><Edit3 className="h-4 w-4" /> Edit budget</Btn><Btn onClick={handleSave} disabled={isSaving}>{isSaving ? "Saving..." : isSaved ? "Saved!" : <><Save className="h-4 w-4" /> Save</>}</Btn></>}
     >
       <div className="grid lg:grid-cols-3 gap-6 mb-8">
         <Card className="p-6 lg:col-span-2 bg-gradient-card">

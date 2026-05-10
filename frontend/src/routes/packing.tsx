@@ -20,6 +20,7 @@ function PackingPage() {
   const [itemsMap, setItemsMap] = useState<Record<string, any[]>>({});
   const [newItemNames, setNewItemNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [availableTrips, setAvailableTrips] = useState<any[]>([]);
 
   const fetchItems = async () => {
     const token = localStorage.getItem("token");
@@ -30,7 +31,7 @@ function PackingPage() {
         const res = await fetch("http://localhost:5000/api/trips", { headers: { "Authorization": `Bearer ${token}` } });
         if (res.ok) {
           const trips = await res.json();
-          if (trips.length > 0) return navigate({ search: { tripId: trips[0].id }, replace: true });
+          setAvailableTrips(trips);
         }
       } catch (e) { console.error(e); }
       return setLoading(false);
@@ -81,11 +82,11 @@ function PackingPage() {
     await fetch(`http://localhost:5000/api/packing/${id}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
   };
 
-  const add = async (cat: string) => {
-    const name = newItemNames[cat]?.trim();
+  const add = async (cat: string, overrideName?: string) => {
+    const name = overrideName || newItemNames[cat]?.trim();
     if (!name) return;
     
-    setNewItemNames(p => ({ ...p, [cat]: "" }));
+    if (!overrideName) setNewItemNames(p => ({ ...p, [cat]: "" }));
     const token = localStorage.getItem("token");
     try {
       const res = await fetch(`http://localhost:5000/api/trips/${tripId}/packing`, {
@@ -103,7 +104,24 @@ function PackingPage() {
   };
 
   if (loading) return <AppLayout title="Loading..."><div className="p-10 text-center text-muted-foreground">Loading checklist...</div></AppLayout>;
-  if (!tripId) return <AppLayout title="Error"><div className="p-10 text-center">Please select a valid trip from the Dashboard.</div></AppLayout>;
+  
+  if (!tripId) {
+    return (
+      <AppLayout title="Select a Trip" subtitle="Choose a trip to view its packing list">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {availableTrips.map(t => (
+             <div key={t.id} onClick={() => navigate({ to: "/packing", search: { tripId: t.id } })} className="cursor-pointer">
+               <Card className="p-5 hover:border-primary/50 transition-all h-full">
+                  <h3 className="font-display font-semibold text-lg">{t.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{new Date(t.start_date).toLocaleDateString()} - {new Date(t.end_date).toLocaleDateString()}</p>
+               </Card>
+             </div>
+          ))}
+          {availableTrips.length === 0 && <div className="col-span-full text-center p-10 text-muted-foreground">No trips found. Create one first!</div>}
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout
@@ -176,7 +194,7 @@ function PackingPage() {
               {["Slip-on shoes","Pocket Wi-Fi rental","Cash for small shops","Compact umbrella","Travel chopsticks"].map((t) => (
                 <div key={t} className="flex items-center justify-between p-2.5 rounded-lg border border-dashed border-border hover:border-primary/40 hover:bg-primary/5 transition">
                   <span className="text-sm">{t}</span>
-                  <button onClick={() => { setNewItemNames(p => ({...p, Essentials: t})); setTimeout(() => add("Essentials"), 50); }} className="h-7 w-7 rounded-md bg-primary/10 text-primary grid place-items-center"><Plus className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => add("Essentials", t)} className="h-7 w-7 rounded-md bg-primary/10 text-primary grid place-items-center"><Plus className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
             </div>

@@ -23,6 +23,7 @@ function NotesPage() {
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
   const [newType, setNewType] = useState("general");
+  const [availableTrips, setAvailableTrips] = useState<any[]>([]);
 
   const fetchNotes = async () => {
     const token = localStorage.getItem("token");
@@ -33,7 +34,7 @@ function NotesPage() {
         const res = await fetch("http://localhost:5000/api/trips", { headers: { "Authorization": `Bearer ${token}` } });
         if (res.ok) {
           const trips = await res.json();
-          if (trips.length > 0) return navigate({ search: { tripId: trips[0].id }, replace: true });
+          setAvailableTrips(trips);
         }
       } catch (e) { console.error(e); }
       return setLoading(false);
@@ -79,7 +80,24 @@ function NotesPage() {
   };
 
   if (loading) return <AppLayout title="Loading..."><div className="p-10 text-center text-muted-foreground">Loading notes...</div></AppLayout>;
-  if (!tripId) return <AppLayout title="Error"><div className="p-10 text-center">Please select a valid trip from the Dashboard.</div></AppLayout>;
+  
+  if (!tripId) {
+    return (
+      <AppLayout title="Select a Trip" subtitle="Choose a trip to view its notes">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {availableTrips.map(t => (
+             <div key={t.id} onClick={() => navigate({ to: "/notes", search: { tripId: t.id } })} className="cursor-pointer">
+               <Card className="p-5 hover:border-primary/50 transition-all h-full">
+                  <h3 className="font-display font-semibold text-lg">{t.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{new Date(t.start_date).toLocaleDateString()} - {new Date(t.end_date).toLocaleDateString()}</p>
+               </Card>
+             </div>
+          ))}
+          {availableTrips.length === 0 && <div className="col-span-full text-center p-10 text-muted-foreground">No trips found. Create one first!</div>}
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout

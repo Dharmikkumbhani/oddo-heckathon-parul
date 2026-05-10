@@ -375,23 +375,56 @@ app.get('/api/trips/:tripId/budget', authenticateToken, async (req, res) => {
       GROUP BY ac.name
     `, [tripId]);
     
-    // Also aggregate by stop for cost by destination
-    const destRes = await db.query(`
-      SELECT c.name as city_name, SUM(a.estimated_cost) as city_cost
-      FROM trip_stop_activities tsa
-      JOIN trip_stops ts ON tsa.trip_stop_id = ts.id
-      JOIN cities c ON ts.city_id = c.id
-      JOIN activities a ON tsa.activity_id = a.id
-      WHERE tsa.trip_id = $1
-      GROUP BY c.name
+    // Aggregate stop costs as 'Stay'
+    const stopRes = await db.query(`
+      SELECT SUM(estimated_stop_cost) as total_cost FROM trip_stops WHERE trip_id = $1
     `, [tripId]);
+
+    const categories = actRes.rows;
+    if (stopRes.rows[0].total_cost && Number(stopRes.rows[0].total_cost) > 0) {
+      categories.push({ category_name: 'Stay', total_cost: stopRes.rows[0].total_cost });
+    }
+    
+    // Aggregate by stop for cost by destination (activities + stops)
+    const destRes = await db.query(`
+      SELECT c.name as city_name, 
+        SUM(COALESCE(a.estimated_cost, 0)) as act_cost,
+        MAX(COALESCE(ts.estimated_stop_cost, 0)) as stop_cost
+      FROM trip_stops ts
+      JOIN cities c ON ts.city_id = c.id
+      LEFT JOIN trip_stop_activities tsa ON tsa.trip_stop_id = ts.id
+      LEFT JOIN activities a ON tsa.activity_id = a.id
+      WHERE ts.trip_id = $1
+      GROUP BY ts.id, c.name
+    `, [tripId]);
+
+    const destMap = {};
+    destRes.rows.forEach(r => {
+      destMap[r.city_name] = (destMap[r.city_name] || 0) + Number(r.act_cost) + Number(r.stop_cost);
+    });
+    const destinations = Object.keys(destMap).map(k => ({ city_name: k, city_cost: destMap[k] }));
 
     res.json({
       trip_title: tripRes.rows[0].title,
       budget_range: tripRes.rows[0].budget_range,
-      categories: actRes.rows,
-      destinations: destRes.rows
+      categories: categories,
+      destinations: destinations
     });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.put('/api/trips/:id/budget', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { budgetRange } = req.body;
+    const result = await db.query(
+      'UPDATE trips SET budget_range = $1 WHERE id = $2 AND user_id = $3 RETURNING *',
+      [budgetRange, id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Trip not found or not owned by user' });
+    res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: 'Internal server error.' });
   }
