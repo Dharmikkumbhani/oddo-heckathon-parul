@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import {
   LayoutDashboard, Map, PlusCircle, Compass, NotebookPen, User,
   Search, Bell, Plane, Luggage, Wallet, Globe2,
@@ -42,6 +42,24 @@ export default function AppLayout({ children, title, subtitle, actions }: {
 }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (p: string) => p === "/" ? path === "/" : path.startsWith(p);
+  const [user, setUser] = useState<any>(null);
+
+  const loadUser = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch("http://localhost:5000/api/users/profile", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) setUser(await res.json());
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    loadUser();
+    window.addEventListener("profileUpdated", loadUser);
+    return () => window.removeEventListener("profileUpdated", loadUser);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -101,8 +119,8 @@ export default function AppLayout({ children, title, subtitle, actions }: {
         <header className="sticky top-0 z-20 bg-background/80 backdrop-blur-xl border-b border-border">
           <div className="flex items-center gap-3 px-4 lg:px-8 h-16">
             <div className="lg:hidden"><Logo size="sm" /></div>
-            <div className="flex-1 max-w-xl mx-auto lg:mx-0">
-              <div className="relative hidden sm:block">
+            <div className="flex-1 max-w-xl hidden lg:block">
+              <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                   placeholder="Search destinations, trips, activities…"
@@ -110,11 +128,19 @@ export default function AppLayout({ children, title, subtitle, actions }: {
                 />
               </div>
             </div>
-            <button className="h-10 w-10 grid place-items-center rounded-full hover:bg-muted relative">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-coral" />
-            </button>
-            <div className="h-9 w-9 rounded-full bg-gradient-ocean grid place-items-center text-primary-foreground text-sm font-semibold ring-2 ring-card">AS</div>
+            <div className="ml-auto flex items-center gap-3">
+              <button className="h-10 w-10 grid place-items-center rounded-full hover:bg-muted relative">
+                <Bell className="h-4 w-4" />
+                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-coral" />
+              </button>
+              <Link to="/profile" className="h-9 w-9 rounded-full bg-gradient-ocean grid place-items-center text-primary-foreground text-sm font-semibold ring-2 ring-card overflow-hidden">
+                {user?.profile_photo_url ? (
+                   <img src={`http://localhost:5000${user.profile_photo_url}`} className="w-full h-full object-cover" alt="Profile" />
+                ) : (
+                   user ? (user.first_name?.[0] + (user.last_name?.[0] || "")) : "AS"
+                )}
+              </Link>
+            </div>
           </div>
           {(title || actions) && (
             <div className="px-4 lg:px-8 pb-5 pt-2 flex flex-wrap items-end justify-between gap-4">

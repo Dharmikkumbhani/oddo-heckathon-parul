@@ -173,6 +173,65 @@ app.get('/api/trips', authenticateToken, async (req, res) => {
   }
 });
 
+// GET DASHBOARD STATS
+app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const tripsRes = await db.query('SELECT COUNT(*) FROM trips WHERE user_id = $1', [userId]);
+    const tripsPlanned = parseInt(tripsRes.rows[0].count);
+    
+    const citiesRes = await db.query(`
+      SELECT COUNT(DISTINCT city_id) 
+      FROM trip_stops ts
+      JOIN trips t ON ts.trip_id = t.id
+      WHERE t.user_id = $1
+    `, [userId]);
+    const citiesVisited = parseInt(citiesRes.rows[0].count);
+    
+    const nextTripRes = await db.query(`
+      SELECT start_date FROM trips 
+      WHERE user_id = $1 AND start_date >= CURRENT_DATE 
+      ORDER BY start_date ASC LIMIT 1
+    `, [userId]);
+    let daysTillNext = 0;
+    if (nextTripRes.rows.length > 0) {
+      const nextDate = new Date(nextTripRes.rows[0].start_date);
+      const today = new Date();
+      daysTillNext = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysTillNext < 0) daysTillNext = 0;
+    }
+    
+    const trendingRes = await db.query(`
+      SELECT t.id, t.title, u.first_name || ' ' || u.last_name as author_name 
+      FROM trips t 
+      JOIN users u ON t.user_id = u.id 
+      WHERE t.is_public = true 
+      ORDER BY t.id DESC LIMIT 3
+    `);
+    const trendingCommunity = trendingRes.rows;
+    
+    const popularCitiesRes = await db.query(`
+      SELECT c.*, co.name as country_name 
+      FROM cities c
+      JOIN countries co ON c.country_id = co.id
+      ORDER BY c.popularity_score DESC LIMIT 4
+    `);
+    const topDestinations = popularCitiesRes.rows;
+
+    res.json({
+      tripsPlanned,
+      citiesVisited,
+      daysTillNext,
+      trendingCommunity,
+      topDestinations
+    });
+  } catch (error) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 // GET SINGLE TRIP
 app.get('/api/trips/:id', authenticateToken, async (req, res) => {
   try {
@@ -650,6 +709,101 @@ app.post('/api/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET PROFILE Endpoint
+app.get('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const result = await db.query(`
+      SELECT u.id, u.first_name, u.last_name, u.email, u.phone_number, u.city, u.bio, u.profile_photo_url, c.name as country, up.preferred_trip_styles
+      FROM users u
+      LEFT JOIN countries c ON u.country_id = c.id
+      LEFT JOIN user_preferences up ON u.id = up.user_id
+      WHERE u.id = $1
+    `, [userId]);
+    
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// UPDATE PROFILE Endpoint
+app.put('/api/users/profile', authenticateToken, upload.single('profilePhoto'), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { firstName, lastName, phone, city, country, bio, styles } = req.body;
+    const profilePhotoUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    
+    // Country ID resolution
+    let countryId = null;
+    if (country) {
+      const countryResult = await db.query('SELECT id FROM countries WHERE name ILIKE $1', [country]);
+      if (countryResult.rows.length > 0) {
+        countryId = countryResult.rows[0].id;
+      }
+    }
+    
+    // Update user
+    let updateQuery = `
+      UPDATE users SET 
+      first_name = $1, last_name = $2, phone_number = $3, city = $4, country_id = $5, bio = $6
+    `;
+    const values = [firstName, lastName, phone, city, countryId, bio];
+    
+    if (profilePhotoUrl) {
+      updateQuery += `, profile_photo_url = $7 WHERE id = $8 RETURNING *`;
+      values.push(profilePhotoUrl, userId);
+    } else {
+      updateQuery += ` WHERE id = $7 RETURNING *`;
+      values.push(userId);
+    }
+    
+    const result = await db.query(updateQuery, values);
+    
+    // Update preferences
+    if (styles) {
+      let stylesArray = [];
+      try { stylesArray = JSON.parse(styles); } catch(e) { if(typeof styles === 'string') stylesArray = [styles]; }
+      
+      // Upsert preferences
+      const prefExist = await db.query('SELECT id FROM user_preferences WHERE user_id = $1', [userId]);
+      if (prefExist.rows.length > 0) {
+        await db.query('UPDATE user_preferences SET preferred_trip_styles = $1 WHERE user_id = $2', [stylesArray, userId]);
+      } else {
+        await db.query('INSERT INTO user_preferences (user_id, preferred_trip_styles) VALUES ($1, $2)', [userId, stylesArray]);
+      }
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// DELETE ACCOUNT Endpoint
+app.delete('/api/users/account', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // We can rely on ON DELETE CASCADE in the DB or manually delete related records
+    // Let's do manual deletion just in case cascades aren't set up
+    await db.query('DELETE FROM trip_stop_activities WHERE trip_id IN (SELECT id FROM trips WHERE user_id = $1)', [userId]);
+    await db.query('DELETE FROM trip_stops WHERE trip_id IN (SELECT id FROM trips WHERE user_id = $1)', [userId]);
+    await db.query('DELETE FROM trip_notes WHERE user_id = $1', [userId]);
+    await db.query('DELETE FROM packing_items WHERE created_by_user_id = $1', [userId]);
+    await db.query('DELETE FROM trips WHERE user_id = $1', [userId]);
+    await db.query('DELETE FROM user_preferences WHERE user_id = $1', [userId]);
+    await db.query('DELETE FROM users WHERE id = $1', [userId]);
+    
+    res.json({ success: true, message: 'Account deleted' });
+  } catch (error) {
+    console.error('Delete account error:', error);
     res.status(500).json({ error: 'Internal server error.' });
   }
 });

@@ -33,7 +33,7 @@ function CitySearch() {
             image: c.image_url,
             desc: c.description || c.region,
             tags: c.climate_type ? [c.climate_type, c.region] : [c.region],
-            cost: Array(Math.ceil((c.cost_index || 50) / 30) || 1).fill("$").join(""),
+            cost: c.cost_index ? `$${c.cost_index}/day` : "$120/day",
             rating: c.popularity_score
           }));
           setCityResults(mapped);
@@ -93,7 +93,7 @@ function CitySearch() {
               <div>
                 <div className="text-xs font-semibold mb-2">Budget</div>
                 <input type="range" defaultValue={50} className="w-full accent-primary" />
-                <div className="flex justify-between text-[11px] text-muted-foreground mt-1"><span>$</span><span>$$</span><span>$$$</span></div>
+                <div className="flex justify-between text-[11px] text-muted-foreground mt-1"><span>$50/day</span><span>$150/day</span><span>$300/day</span></div>
               </div>
               <div>
                 <div className="text-xs font-semibold mb-2">Climate</div>

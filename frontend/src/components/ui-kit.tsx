@@ -144,9 +144,9 @@ export function CityCard({ city, onAdd, showAdd }: { city: any; onAdd?: () => vo
         </div>
       </div>
       <div className="p-4 space-y-3">
-        <p className="text-xs text-muted-foreground line-clamp-2">{city.desc}</p>
+        <p className="text-xs text-muted-foreground line-clamp-2">{city.desc || city.description}</p>
         <div className="flex flex-wrap gap-1.5">
-          {city.tags.map((t: string) => <Chip key={t} color="sky">{t}</Chip>)}
+          {(city.tags || []).map((t: string) => <Chip key={t} color="sky">{t}</Chip>)}
         </div>
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-muted-foreground">Cost · <span className="text-foreground font-semibold">{city.cost}</span></span>

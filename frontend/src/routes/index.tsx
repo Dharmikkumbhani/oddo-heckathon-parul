@@ -16,6 +16,8 @@ export const Route = createFileRoute("/")({
 function Dashboard() {
   const navigate = useNavigate();
   const [myTrips, setMyTrips] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
@@ -44,6 +46,13 @@ function Dashboard() {
           }));
           setMyTrips(mapped);
         }
+        
+        const statsRes = await fetch("http://localhost:5000/api/dashboard/stats", { headers: { "Authorization": `Bearer ${token}` } });
+        if (statsRes.ok) setStats(await statsRes.json());
+        
+        const userRes = await fetch("http://localhost:5000/api/users/profile", { headers: { "Authorization": `Bearer ${token}` } });
+        if (userRes.ok) setUser(await userRes.json());
+        
       } catch (e) {
         console.error(e);
       } finally {
@@ -63,13 +72,13 @@ function Dashboard() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
         <div className="relative p-8 md:p-12 text-white max-w-2xl">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white/15 backdrop-blur px-3 py-1.5 rounded-full">
-            <Sparkles className="h-3.5 w-3.5" /> 3 new destination ideas for you
+            <Sparkles className="h-3.5 w-3.5" /> {stats?.topDestinations?.length || 3} new destination ideas for you
           </span>
           <h1 className="font-display text-3xl md:text-5xl font-semibold mt-4 leading-tight">
-            Welcome back, Alex.<br />Where to next?
+            Welcome back, {user?.first_name || "Traveler"}.<br />Where to next?
           </h1>
           <p className="mt-3 text-white/85 max-w-md">
-            You have <strong>2 upcoming trips</strong> and a packing list waiting. Let's keep planning.
+            You have <strong>{myTrips.length} upcoming trips</strong> waiting. Let's keep planning.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Btn asChild size="lg" variant="coral">
@@ -130,10 +139,10 @@ function Dashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={MapIcon} label="Trips planned" value="14" hint="+2 this month" accent="primary" />
-        <StatCard icon={Plane} label="Cities visited" value="37" accent="coral" />
-        <StatCard icon={Wallet} label="Budget saved" value="$1,240" hint="vs estimate" accent="emerald" />
-        <StatCard icon={CalendarDays} label="Days till next trip" value="32" accent="sunset" />
+        <StatCard icon={MapIcon} label="Trips planned" value={stats?.tripsPlanned || "0"} hint="Total trips" accent="primary" />
+        <StatCard icon={Plane} label="Cities visited" value={stats?.citiesVisited || "0"} accent="coral" />
+        <StatCard icon={Wallet} label="Budget saved" value={`$${(stats?.tripsPlanned || 0) * 120}`} hint="vs estimate" accent="emerald" />
+        <StatCard icon={CalendarDays} label="Days till next trip" value={stats?.daysTillNext || "0"} accent="sunset" />
       </div>
 
       {/* Quick actions */}
@@ -196,28 +205,35 @@ function Dashboard() {
         </div>
         <div>
           <SectionHeader title="Budget at a glance" />
-          <Card className="p-6">
-            <div className="text-xs text-muted-foreground">Total estimated</div>
-            <div className="font-display text-3xl font-semibold mt-1">$3,200</div>
-            <div className="text-xs text-emerald font-semibold">$240 under your limit</div>
-            <div className="mt-5 space-y-3">
-              {[
-                { label: "Stay", val: 1200, pct: 38, color: "bg-primary" },
-                { label: "Transport", val: 820, pct: 26, color: "bg-coral" },
-                { label: "Activities", val: 540, pct: 17, color: "bg-emerald" },
-                { label: "Meals", val: 410, pct: 13, color: "bg-sunset" },
-                { label: "Misc", val: 230, pct: 6, color: "bg-sky" },
-              ].map((b) => (
-                <div key={b.label}>
-                  <div className="flex justify-between text-xs mb-1"><span>{b.label}</span><span className="font-semibold">${b.val}</span></div>
-                  <div className="h-1.5 bg-muted rounded-full"><div className={`h-full rounded-full ${b.color}`} style={{ width: `${b.pct * 2.5}%` }} /></div>
-                </div>
-              ))}
-            </div>
-            <Btn asChild variant="outline" size="sm" className="w-full mt-5">
-              <Link to="/budget" search={myTrips.length > 0 ? { tripId: myTrips[0].id } : {}}>Open budget</Link>
-            </Btn>
-          </Card>
+          {myTrips.length > 0 ? (
+            <Card className="p-6">
+              <div className="text-xs text-muted-foreground">Total estimated</div>
+              <div className="font-display text-3xl font-semibold mt-1">{myTrips[0].budget === "$0" ? "TBD" : myTrips[0].budget}</div>
+              <div className="text-xs text-emerald font-semibold">On track with budget</div>
+              <div className="mt-5 space-y-3">
+                {[
+                  { label: "Stay", val: 1200, pct: 38, color: "bg-primary" },
+                  { label: "Transport", val: 820, pct: 26, color: "bg-coral" },
+                  { label: "Activities", val: 540, pct: 17, color: "bg-emerald" },
+                  { label: "Meals", val: 410, pct: 13, color: "bg-sunset" },
+                  { label: "Misc", val: 230, pct: 6, color: "bg-sky" },
+                ].map((b) => (
+                  <div key={b.label}>
+                    <div className="flex justify-between text-xs mb-1"><span>{b.label}</span><span className="font-semibold">${Math.round(parseInt(myTrips[0].budget.replace(/\D/g, '') || "3200") * (b.pct/100))}</span></div>
+                    <div className="h-1.5 bg-muted rounded-full"><div className={`h-full rounded-full ${b.color}`} style={{ width: `${b.pct * 2.5}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+              <Btn asChild variant="outline" size="sm" className="w-full mt-5">
+                <Link to="/budget" search={myTrips.length > 0 ? { tripId: myTrips[0].id } : {}}>Open budget</Link>
+              </Btn>
+            </Card>
+          ) : (
+            <Card className="p-6 text-center text-muted-foreground py-16">
+              <Wallet className="h-8 w-8 mx-auto mb-3 opacity-20" />
+              <p>Plan a trip to see your budget breakdown.</p>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -234,7 +250,9 @@ function Dashboard() {
       {/* Recommended */}
       <SectionHeader title="Trending destinations" subtitle="Hand-picked from the community this week" action={<Link to="/cities" className="text-sm text-primary font-semibold">Browse all →</Link>} />
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-10">
-        {cities.slice(0, 3).map((c) => <CityCard key={c.name} city={c} />)}
+        {(stats?.topDestinations && stats.topDestinations.length > 0) ? stats.topDestinations.slice(0, 3).map((c: any) => (
+          <CityCard key={c.name} city={{ name: c.name, desc: c.description, image: c.image_url || heroImg, rating: 4.8, cost: c.cost_index ? `$${c.cost_index}/day` : "$120/day", country: c.country_name || "Unknown", tags: ["Popular"] }} />
+        )) : cities.slice(0, 3).map((c) => <CityCard key={c.name} city={c} />)}
       </div>
 
       {/* Inspiration + Community */}
@@ -255,16 +273,18 @@ function Dashboard() {
             <Link to="/community" className="text-sm text-primary font-semibold">Explore →</Link>
           </div>
           <div className="mt-4 space-y-3">
-            {["7 days in Vietnam — under $700", "Solo female travel: Kyoto", "Family road trip · Pacific coast"].map((t, i) => (
-              <div key={t} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition">
+            {stats?.trendingCommunity?.length > 0 ? stats.trendingCommunity.map((t: any, i: number) => (
+              <Link key={t.id} to="/shared" search={{ tripId: t.id }} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition block">
                 <div className="h-12 w-12 rounded-lg bg-gradient-ocean grid place-items-center text-white font-bold text-sm shrink-0">{i + 1}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">{t}</div>
-                  <div className="text-xs text-muted-foreground">by @wanderlust · {2.3 - i * 0.4}k saves</div>
+                  <div className="text-sm font-semibold truncate">{t.title}</div>
+                  <div className="text-xs text-muted-foreground">by @{t.author_name}</div>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              </div>
-            ))}
+              </Link>
+            )) : (
+              <div className="text-sm text-muted-foreground">No public trips yet.</div>
+            )}
           </div>
         </Card>
       </div>

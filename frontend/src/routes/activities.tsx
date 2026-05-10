@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import AppLayout from "@/components/AppLayout";
-import { Btn, Card, Chip } from "@/components/ui-kit";
+import { Btn, Card, Chip, CityCard } from "@/components/ui-kit";
 import { Search, Star, Clock, Wallet, Plus, Check, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -22,21 +22,36 @@ function ActivitySearch() {
   
   const [activities, setActivities] = useState<any[]>([]);
   const [picked, setPicked] = useState<any[]>([]); // store whole objects
+  const [cities, setCities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const fetchActs = async () => {
-      try {
-        let url = "http://localhost:5000/api/activities";
-        if (cityId) url += `?cityId=${cityId}`;
-        const res = await fetch(url);
-        if (res.ok) setActivities(await res.json());
-      } catch (e) { console.error(e); }
-      setLoading(false);
-    };
-    fetchActs();
-  }, [cityId]);
+    if (!cityId && !tripId && !stopId) {
+      setLoading(true);
+      fetch("http://localhost:5000/api/cities").then(r => r.json()).then(data => {
+         const mapped = data.map((c: any) => ({
+           id: c.id, name: c.name, country: c.country_name, image: c.image_url,
+           desc: c.description || c.region, tags: c.climate_type ? [c.climate_type, c.region] : [c.region],
+           cost: c.cost_index ? `$${c.cost_index}/day` : "$120/day", rating: c.popularity_score
+         }));
+         setCities(mapped);
+         setLoading(false);
+      }).catch(console.error);
+    } else {
+      const fetchActs = async () => {
+        setLoading(true);
+        try {
+          let url = "http://localhost:5000/api/activities";
+          if (cityId) url += `?cityId=${cityId}`;
+          const res = await fetch(url);
+          if (res.ok) setActivities(await res.json());
+        } catch (e) { console.error(e); }
+        setLoading(false);
+      };
+      fetchActs();
+    }
+  }, [cityId, tripId, stopId]);
 
   const toggle = (act: any) => {
     setPicked(p => {
@@ -64,8 +79,23 @@ function ActivitySearch() {
     }
   };
 
-  if (!tripId || !stopId) return <AppLayout title="Error"><div className="p-10 text-center">Please select a stop from the Itinerary Builder first.</div></AppLayout>;
-
+  if (!cityId && !tripId && !stopId) {
+    return (
+      <AppLayout title="Activities" subtitle="Select a destination to browse things to do">
+        {loading ? (
+          <div className="text-center py-10 text-muted-foreground">Loading destinations...</div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {cities.map(c => (
+              <div key={c.id} onClick={() => navigate({ to: "/activities", search: { cityId: c.id } })} className="cursor-pointer">
+                <CityCard city={c} />
+              </div>
+            ))}
+          </div>
+        )}
+      </AppLayout>
+    );
+  }
   return (
     <AppLayout title="Find things to do" subtitle="Browse activities to add to your itinerary">
       <div className="grid lg:grid-cols-[1fr_300px] gap-6">
@@ -135,7 +165,11 @@ function ActivitySearch() {
                 </div>
               ))}
             </div>
-            {picked.length > 0 && <Btn className="w-full mt-4" onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Add to itinerary"}</Btn>}
+            {tripId && stopId ? (
+              picked.length > 0 && <Btn className="w-full mt-4" onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Add to itinerary"}</Btn>
+            ) : (
+              <div className="text-xs text-muted-foreground mt-4 text-center">You're in browse mode. Select a trip from your Dashboard to add activities.</div>
+            )}
           </Card>
         </aside>
       </div>
