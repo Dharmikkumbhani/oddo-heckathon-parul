@@ -78,7 +78,7 @@ function Dashboard() {
             Welcome back, {user?.first_name || "Traveler"}.<br />Where to next?
           </h1>
           <p className="mt-3 text-white/85 max-w-md">
-            You have <strong>{myTrips.length} upcoming trips</strong> waiting. Let's keep planning.
+            You have <strong>{myTrips.filter((t: any) => t.status === 'upcoming').length} upcoming trips</strong> waiting. Let's keep planning.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Btn asChild size="lg" variant="coral">
@@ -251,7 +251,7 @@ function Dashboard() {
       <SectionHeader title="Trending destinations" subtitle="Hand-picked from the community this week" action={<Link to="/cities" className="text-sm text-primary font-semibold">Browse all →</Link>} />
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-10">
         {(stats?.topDestinations && stats.topDestinations.length > 0) ? stats.topDestinations.slice(0, 3).map((c: any) => (
-          <CityCard key={c.name} city={{ name: c.name, desc: c.description, image: c.image_url || heroImg, rating: 4.8, cost: c.cost_index ? `$${c.cost_index}/day` : "$120/day", country: c.country_name || "Unknown", tags: ["Popular"] }} />
+          <CityCard key={c.name} city={{ name: c.name, desc: c.description, image: c.image_url?.startsWith('http') ? c.image_url : `http://localhost:5000${c.image_url}` || heroImg, rating: 4.8, cost: c.cost_index ? `$${c.cost_index}/day` : "$120/day", country: c.country_name || "Unknown", tags: ["Popular"] }} />
         )) : cities.slice(0, 3).map((c) => <CityCard key={c.name} city={c} />)}
       </div>
 

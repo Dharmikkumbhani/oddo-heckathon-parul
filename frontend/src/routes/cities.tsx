@@ -30,7 +30,7 @@ function CitySearch() {
             id: c.id,
             name: c.name,
             country: c.country_name,
-            image: c.image_url,
+            image: c.image_url?.startsWith('http') ? c.image_url : `http://localhost:5000${c.image_url}`,
             desc: c.description || c.region,
             tags: c.climate_type ? [c.climate_type, c.region] : [c.region],
             cost: c.cost_index ? `$${c.cost_index}/day` : "$120/day",

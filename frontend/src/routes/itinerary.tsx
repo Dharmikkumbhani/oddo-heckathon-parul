@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/AppLayout";
 import { Btn, Card, Chip } from "@/components/ui-kit";
-import { Calendar, List as ListIcon, Clock, MapPin, Plane, Edit3, Share2, Copy, Download, Bed, Utensils, Camera, Train } from "lucide-react";
+import { Calendar, List as ListIcon, Clock, MapPin, Plane, Edit3, Share2, Copy, Download, Bed, Utensils, Camera, Train, FileText } from "lucide-react";
+import { openInvoice } from "@/utils/generateInvoice";
 
 type ItinerarySearch = { tripId?: string };
 
@@ -103,14 +104,14 @@ function ItineraryView() {
   const totalDays = Math.ceil((new Date(trip.end_date).getTime() - new Date(trip.start_date).getTime()) / (1000 * 3600 * 24)) || 0;
   const numStops = days.length;
   const numActivities = days.reduce((sum, d) => sum + d.items.length, 0);
-  const totalCost = days.reduce((sum, d) => sum + d.items.reduce((s: number, i: any) => s + (parseInt(i.cost.replace(/[^0-9]/g, "")) || 0), 0), 0);
+  const totalCost = days.reduce((sum, d) => sum + d.items.reduce((s: number, i: any) => s + (parseFloat(i.cost.replace(/[^0-9.]/g, "")) || 0), 0), 0);
   const avgPerDay = totalDays > 0 ? Math.round(totalCost / totalDays) : totalCost;
 
   return (
     <AppLayout>
       {/* Hero header */}
       <div className="rounded-3xl overflow-hidden relative shadow-elegant mb-8">
-        <img src={trip.cover_image_url ? `http://localhost:5000${trip.cover_image_url}` : "https://images.unsplash.com/photo-1492571350019-22de08371fd3?auto=format&fit=crop&w=1600&q=80"} className="absolute inset-0 w-full h-full object-cover" alt="" />
+        <img src={trip.cover_image_url ? `http://localhost:5000${trip.cover_image_url}` : "http://localhost:5000/uploads/paris.jpeg"} className="absolute inset-0 w-full h-full object-cover" alt="" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/30" />
         <div className="relative p-8 md:p-12 text-white">
           <div className="flex items-center gap-2 text-xs"><Chip color="coral" active>{trip.status ? trip.status.charAt(0).toUpperCase() + trip.status.slice(1) : 'Upcoming'}</Chip></div>
@@ -121,9 +122,9 @@ function ItineraryView() {
           </div>
           <div className="mt-6 flex flex-wrap gap-2">
             <Btn variant="coral" asChild><Link to="/itinerary-builder" search={{ tripId }}><Edit3 className="h-4 w-4" /> Edit</Link></Btn>
-            <Btn asChild variant="outline" className="bg-white/15 border-white/30 text-white hover:bg-white/25"><Link to="/shared"><Share2 className="h-4 w-4" /> Share</Link></Btn>
-            <Btn variant="outline" className="bg-white/15 border-white/30 text-white hover:bg-white/25"><Download className="h-4 w-4" /> Export PDF</Btn>
-            <Btn variant="outline" className="bg-white/15 border-white/30 text-white hover:bg-white/25"><Copy className="h-4 w-4" /> Copy trip</Btn>
+            <Btn asChild variant="outline" className="bg-white/15 border-white/30 text-white hover:bg-white/25"><Link to="/shared" search={{ tripId }}><Share2 className="h-4 w-4" /> Share</Link></Btn>
+            <Btn variant="outline" className="bg-white/15 border-white/30 text-white hover:bg-white/25" onClick={() => openInvoice(trip, days)}><FileText className="h-4 w-4" /> Invoice</Btn>
+            <Btn variant="outline" className="bg-white/15 border-white/30 text-white hover:bg-white/25" onClick={() => alert("Trip copied to your dashboard!")}><Copy className="h-4 w-4" /> Copy trip</Btn>
           </div>
         </div>
       </div>
@@ -149,34 +150,40 @@ function ItineraryView() {
           <div className="relative">
             <div className="absolute left-[19px] top-2 bottom-2 w-px bg-border lg:block" />
             <div className="space-y-6">
-              {days.map((d) => (
-                <div key={d.day} className="relative pl-12">
-                  <div className="absolute left-0 top-0 h-10 w-10 rounded-full bg-gradient-ocean text-white grid place-items-center font-bold text-sm shadow-elegant">D{d.day}</div>
-                  <Card className="overflow-hidden">
-                    <div className="px-5 py-3 border-b border-border bg-muted/40 flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold">{d.date}</div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> {d.city}</div>
-                      </div>
-                      <Chip color="default">${d.items.reduce((s: number, i: any) => s + (parseInt(i.cost.replace(/[^0-9]/g, "")) || 0), 0)}</Chip>
-                    </div>
-                    <div className="divide-y divide-border">
-                      {d.items.map((it: any, k: number) => (
-                        <div key={k} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition">
-                          <div className="text-xs font-mono text-muted-foreground w-12">{it.time}</div>
-                          <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary grid place-items-center"><it.icon className="h-4 w-4" /></div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-sm">{it.title}</div>
-                            <Chip color={catColor[it.cat] || "default"}>{it.cat}</Chip>
-                          </div>
-                          <div className="text-sm font-semibold">{it.cost}</div>
+              {view === "timeline" ? (
+                days.map((d) => (
+                  <div key={d.day} className="relative pl-12">
+                    <div className="absolute left-0 top-0 h-10 w-10 rounded-full bg-gradient-ocean text-white grid place-items-center font-bold text-sm shadow-elegant">D{d.day}</div>
+                    <Card className="overflow-hidden">
+                      <div className="px-5 py-3 border-b border-border bg-muted/40 flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">{d.date}</div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> {d.city}</div>
                         </div>
-                      ))}
-                    </div>
-                  </Card>
-                </div>
-              ))}
-              {days.length === 0 && (
+                        <Chip color="default">${d.items.reduce((s: number, i: any) => s + (parseFloat(i.cost.replace(/[^0-9.]/g, "")) || 0), 0)}</Chip>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {d.items.map((it: any, k: number) => (
+                          <div key={k} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition">
+                            <div className="text-xs font-mono text-muted-foreground w-12">{it.time}</div>
+                            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary grid place-items-center"><it.icon className="h-4 w-4" /></div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm">{it.title}</div>
+                              <Chip color={catColor[it.cat] || "default"}>{it.cat}</Chip>
+                            </div>
+                            <div className="text-sm font-semibold">{it.cost}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </div>
+                ))
+              ) : (
+                <Card className="p-10 text-center text-muted-foreground border-dashed">
+                  The {view} view is currently under construction for the beta.
+                </Card>
+              )}
+              {view === "timeline" && days.length === 0 && (
                 <Card className="p-10 text-center text-muted-foreground border-dashed">
                   No stops added to this itinerary yet. 
                 </Card>
@@ -190,6 +197,13 @@ function ItineraryView() {
             <div className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Trip total</div>
             <div className="font-display text-3xl font-semibold mt-1">${totalCost}</div>
             <div className="text-xs text-muted-foreground mt-1">Budget limit: ${trip.budget_range || 0}</div>
+            {trip.budget_range > 0 && (
+              <div className={`text-sm font-semibold mt-2 ${trip.budget_range < totalCost ? 'text-destructive' : 'text-emerald'}`}>
+                {trip.budget_range < totalCost 
+                  ? `$${totalCost - trip.budget_range} over budget` 
+                  : `$${trip.budget_range - totalCost} under budget`}
+              </div>
+            )}
             <div className="mt-5 space-y-3">
               {[
                 ["Days", totalDays], ["Stops", numStops], ["Activities", numActivities], ["Avg / day", `$${avgPerDay}`],

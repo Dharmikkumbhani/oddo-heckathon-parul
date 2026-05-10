@@ -1,8 +1,8 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { ReactNode, useEffect, useState } from "react";
 import {
   LayoutDashboard, Map, PlusCircle, Compass, NotebookPen, User,
-  Search, Bell, Plane, Luggage, Wallet, Globe2,
+  Search, Bell, Plane, Luggage, Wallet, Globe2, LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,7 @@ export default function AppLayout({ children, title, subtitle, actions }: {
   children: ReactNode; title?: string; subtitle?: string; actions?: ReactNode;
 }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
   const isActive = (p: string) => p === "/" ? path === "/" : path.startsWith(p);
   const [user, setUser] = useState<any>(null);
 
@@ -140,6 +141,13 @@ export default function AppLayout({ children, title, subtitle, actions }: {
                    user ? (user.first_name?.[0] + (user.last_name?.[0] || "")) : "AS"
                 )}
               </Link>
+              <button 
+                onClick={() => { localStorage.removeItem("token"); navigate({ to: "/login" }); }}
+                className="h-9 w-9 rounded-full bg-muted text-muted-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors grid place-items-center ml-2"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
           {(title || actions) && (

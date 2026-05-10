@@ -109,20 +109,54 @@ function BudgetPage() {
   const limit = Number(data.budget_range) || 3500;
   const pct = Math.min((total / limit) * 100, 100) || 0;
 
-  // map backend categories to our UI categories
+  // Normalize DB category names → UI labels
+  const dbCatToLabel: Record<string, string> = {
+    'Sightseeing': 'Activity',
+    'Adventure': 'Activity',
+    'Entertainment': 'Activity',
+    'Activity': 'Activity',
+    'Food & Drink': 'Food & Drink',
+    'Transport': 'Transport',
+    'Stay': 'Stay',
+    'Accommodation': 'Stay',
+  };
+
+  // Aggregate DB categories into UI labels
+  const aggregated: Record<string, number> = {};
+  data.categories.forEach((c: any) => {
+    const label = dbCatToLabel[c.category_name] || 'Misc';
+    aggregated[label] = (aggregated[label] || 0) + Number(c.total_cost);
+  });
+
+  // If no Stay/Transport data from DB, derive reasonable estimates from limit
+  if (!aggregated['Stay'] && limit > 0) {
+    aggregated['Stay'] = Math.round(limit * 0.40);
+  }
+  if (!aggregated['Transport'] && limit > 0) {
+    aggregated['Transport'] = Math.round(limit * 0.20);
+  }
+  if (!aggregated['Food & Drink'] && limit > 0) {
+    aggregated['Food & Drink'] = Math.round(limit * 0.15);
+  }
+
+  const derivedTotal = Object.values(aggregated).reduce((s, v) => s + v, 0);
+
   const cats = defaultCats.map(dc => {
-    const found = data.categories.find((c: any) => c.category_name === dc.label || (dc.label === 'Misc' && !c.category_name));
-    const val = found ? Number(found.total_cost) : 0;
-    return { ...dc, val, pct: total > 0 ? (val / total) * 100 : 0 };
-  }).filter(c => c.val > 0 || c.label === "Misc");
+    const val = aggregated[dc.label] || 0;
+    return { ...dc, val, pct: derivedTotal > 0 ? (val / derivedTotal) * 100 : 0 };
+  }).filter(c => c.val > 0);
 
   if (cats.length === 0) cats.push({ ...defaultCats[4], val: 0, pct: 0 }); // fallback
+
+  const displayTotal = derivedTotal || total;
+  const isOverBudget = displayTotal > limit;
 
   let acc = 0;
   const segs = cats.map((c) => {
     const start = acc; acc += c.pct;
     return { ...c, start, end: acc };
   });
+  const displayPct = Math.min((displayTotal / limit) * 100, 100);
 
   return (
     <AppLayout
@@ -135,14 +169,18 @@ function BudgetPage() {
           <div className="flex flex-wrap gap-6 items-end justify-between">
             <div>
               <div className="text-xs uppercase font-semibold text-muted-foreground">Estimated total</div>
-              <div className="font-display text-5xl font-semibold mt-1">${total.toLocaleString()}</div>
-              <div className="text-sm text-emerald font-semibold mt-1">${Math.max(limit - total, 0).toLocaleString()} under your ${limit.toLocaleString()} limit</div>
+              <div className="font-display text-5xl font-semibold mt-1">${displayTotal.toLocaleString()}</div>
+              <div className={`text-sm font-semibold mt-1 ${isOverBudget ? 'text-destructive' : 'text-emerald'}`}>
+                {isOverBudget
+                  ? `$${(displayTotal - limit).toLocaleString()} over your $${limit.toLocaleString()} limit`
+                  : `$${(limit - displayTotal).toLocaleString()} under your $${limit.toLocaleString()} limit`}
+              </div>
             </div>
           </div>
           <div className="mt-6">
-            <div className="flex justify-between text-xs mb-2"><span className="text-muted-foreground">Spent of limit</span><span className="font-semibold">{Math.round(pct)}%</span></div>
+            <div className="flex justify-between text-xs mb-2"><span className="text-muted-foreground">Spent of limit</span><span className="font-semibold">{Math.round(displayPct)}%</span></div>
             <div className="h-3 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-ocean rounded-full" style={{ width: `${pct}%` }} />
+              <div className={`h-full rounded-full ${isOverBudget ? 'bg-destructive' : 'bg-gradient-ocean'}`} style={{ width: `${displayPct}%` }} />
             </div>
           </div>
         </Card>
@@ -156,7 +194,7 @@ function BudgetPage() {
                 strokeDasharray={`${s.pct} ${100 - s.pct}`} strokeDashoffset={-s.start} />
             ))}
           </svg>
-          <div className="font-display text-2xl font-semibold -mt-24">${(total/1000).toFixed(1)}k</div>
+          <div className="font-display text-2xl font-semibold -mt-24">${(displayTotal/1000).toFixed(1)}k</div>
           <div className="mt-20 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs w-full">
             {cats.map((c) => (
               <div key={c.label} className="flex items-center gap-1.5">
