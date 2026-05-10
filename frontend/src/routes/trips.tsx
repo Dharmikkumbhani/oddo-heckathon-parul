@@ -12,7 +12,7 @@ export const Route = createFileRoute("/trips")({
 
 function TripsPage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"Upcoming" | "Ongoing" | "Completed" | "Draft">("Upcoming");
+  const [tab, setTab] = useState<"Upcoming" | "Ongoing" | "Completed">("Upcoming");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [myTrips, setMyTrips] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,7 +33,7 @@ function TripsPage() {
           // map to UI shape
           const mapped = data.map((t: any) => {
             // Capitalize status
-            let s = t.status ? t.status.charAt(0).toUpperCase() + t.status.slice(1) : "Draft";
+            let s = t.status ? t.status.charAt(0).toUpperCase() + t.status.slice(1) : "Upcoming";
             return {
               id: t.id,
               title: t.title,
@@ -42,7 +42,8 @@ function TripsPage() {
               dates: `${t.start_date ? new Date(t.start_date).toLocaleDateString() : 'TBD'} - ${t.end_date ? new Date(t.end_date).toLocaleDateString() : 'TBD'}`,
               budget: `$${t.budget_range || 0}`,
               status: s,
-              overview: t.description || "No description provided."
+              overview: t.description || "No description provided.",
+              is_public: t.is_public
             };
           });
           setMyTrips(mapped);
@@ -66,7 +67,7 @@ function TripsPage() {
     >
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="inline-flex bg-muted rounded-full p-1 scrollbar-hide overflow-x-auto max-w-full">
-          {(["Upcoming", "Ongoing", "Completed", "Draft"] as const).map((t) => (
+          {(["Upcoming", "Ongoing", "Completed"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-1.5 text-xs font-semibold rounded-full transition whitespace-nowrap ${tab === t ? "bg-card shadow-soft" : "text-muted-foreground"}`}>
               {t} <span className="ml-1 opacity-60">{myTrips.filter(x => x.status === t).length}</span>

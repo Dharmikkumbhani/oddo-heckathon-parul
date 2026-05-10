@@ -75,7 +75,24 @@ export function StatCard({ icon: Icon, label, value, hint, accent = "primary" }:
   );
 }
 
-export function TripCard({ trip }: { trip: any }) {
+export function TripCard({ trip, onUpdate }: { trip: any; onUpdate?: () => void }) {
+  const handlePublish = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:5000/api/trips/${trip.id}/publish`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ isPublic: !trip.is_public })
+      });
+      if (res.ok) {
+        if (onUpdate) onUpdate();
+        else window.location.reload();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+  
   return (
     <Card className="overflow-hidden group hover:shadow-elegant transition-all">
       <div className="relative h-44 overflow-hidden">
@@ -99,16 +116,20 @@ export function TripCard({ trip }: { trip: any }) {
         </div>
         <p className="text-xs text-muted-foreground line-clamp-2">{trip.overview}</p>
         <div className="flex gap-2 pt-1">
-          <Btn size="sm" variant="primary" className="flex-1">View</Btn>
+          <Btn asChild size="sm" variant="primary" className="flex-1">
+            <Link to={`/itinerary-builder`} search={{ tripId: trip.id }}>View</Link>
+          </Btn>
           <Btn size="sm" variant="outline">Edit</Btn>
-          <Btn size="sm" variant="ghost">Share</Btn>
+          <Btn size="sm" variant={trip.is_public ? "coral" : "ghost"} onClick={handlePublish}>
+             {trip.is_public ? "Unpublish" : "Publish"}
+          </Btn>
         </div>
       </div>
     </Card>
   );
 }
 
-export function CityCard({ city }: { city: any }) {
+export function CityCard({ city, onAdd, showAdd }: { city: any; onAdd?: () => void; showAdd?: boolean }) {
   return (
     <Card className="overflow-hidden group hover:shadow-elegant transition-all">
       <div className="relative h-40">
@@ -129,7 +150,7 @@ export function CityCard({ city }: { city: any }) {
         </div>
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-muted-foreground">Cost · <span className="text-foreground font-semibold">{city.cost}</span></span>
-          <Btn size="sm" variant="primary"><Plus className="h-3.5 w-3.5" /> Add</Btn>
+          {showAdd && <Btn size="sm" variant="primary" onClick={onAdd}><Plus className="h-3.5 w-3.5" /> Add</Btn>}
         </div>
       </div>
     </Card>

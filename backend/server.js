@@ -131,8 +131,8 @@ app.post('/api/trips', authenticateToken, upload.single('coverImage'), async (re
     const userId = req.user.id;
 
     const result = await db.query(`
-      INSERT INTO trips (user_id, title, description, start_date, end_date, cover_image_url, trip_style, budget_range)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO trips (user_id, title, description, start_date, end_date, cover_image_url, trip_style, budget_range, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'upcoming')
       RETURNING *
     `, [userId, title, description, startDate, endDate, coverImageUrl, tripStyle, budgetRange]);
 
@@ -148,10 +148,235 @@ app.get('/api/trips', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const result = await db.query('SELECT * FROM trips WHERE user_id = $1 ORDER BY start_date ASC', [userId]);
-    res.json(result.rows);
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    const processedTrips = result.rows.map(trip => {
+      let dynamicStatus = 'upcoming';
+      if (trip.start_date && trip.end_date) {
+        const start = new Date(trip.start_date);
+        const end = new Date(trip.end_date);
+        if (end < today) {
+          dynamicStatus = 'completed';
+        } else if (start <= today && end >= today) {
+          dynamicStatus = 'ongoing';
+        }
+      }
+      return { ...trip, status: dynamicStatus };
+    });
+
+    res.json(processedTrips);
   } catch (error) {
     console.error('Get trips error:', error);
     res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET SINGLE TRIP
+app.get('/api/trips/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const result = await db.query(`
+      SELECT t.*, u.first_name || ' ' || u.last_name as author_name 
+      FROM trips t 
+      JOIN users u ON t.user_id = u.id 
+      WHERE t.id = $1 AND (t.user_id = $2 OR t.is_public = true)
+    `, [id, userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Trip not found or private' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET CITIES Endpoint
+app.get('/api/cities', async (req, res) => {
+  try {
+    const search = req.query.q || '';
+    const result = await db.query(
+      `SELECT c.*, co.name as country_name 
+       FROM cities c 
+       JOIN countries co ON c.country_id = co.id 
+       WHERE c.name ILIKE $1 OR co.name ILIKE $1
+       ORDER BY c.popularity_score DESC`, 
+      [`%${search}%`]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get cities error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET ACTIVITIES Endpoint
+app.get('/api/activities', async (req, res) => {
+  try {
+    const cityId = req.query.cityId;
+    let query = `
+      SELECT a.*, c.name as category_name, c.icon_name 
+      FROM activities a 
+      LEFT JOIN activity_categories c ON a.category_id = c.id
+    `;
+    const params = [];
+    if (cityId) {
+      query += ` WHERE a.city_id = $1`;
+      params.push(cityId);
+    }
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get activities error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET TRIP STOPS
+app.get('/api/trips/:tripId/stops', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const result = await db.query(`
+      SELECT ts.*, c.name as city_name, c.image_url as city_image, c.country_id 
+      FROM trip_stops ts
+      JOIN cities c ON ts.city_id = c.id
+      WHERE ts.trip_id = $1
+      ORDER BY ts.stop_order ASC
+    `, [tripId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ADD TRIP STOP
+app.post('/api/trips/:tripId/stops', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { cityId, arrivalDate, departureDate } = req.body;
+    const orderRes = await db.query('SELECT COALESCE(MAX(stop_order), 0) + 1 as next_order FROM trip_stops WHERE trip_id = $1', [tripId]);
+    const stopOrder = orderRes.rows[0].next_order;
+
+    const result = await db.query(`
+      INSERT INTO trip_stops (trip_id, city_id, stop_order, arrival_date, departure_date)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *
+    `, [tripId, cityId, stopOrder, arrivalDate, departureDate]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Add stop error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// GET STOP ACTIVITIES
+app.get('/api/trips/:tripId/activities', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const result = await db.query(`
+      SELECT tsa.*, a.name, a.image_url, a.estimated_cost as base_cost, a.duration_minutes
+      FROM trip_stop_activities tsa
+      JOIN activities a ON tsa.activity_id = a.id
+      WHERE tsa.trip_id = $1
+      ORDER BY tsa.activity_date ASC, tsa.start_time ASC
+    `, [tripId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ADD ACTIVITY TO STOP
+app.post('/api/stops/:stopId/activities', authenticateToken, async (req, res) => {
+  try {
+    const { stopId } = req.params;
+    const { tripId, activityId, activityDate } = req.body;
+    const result = await db.query(`
+      INSERT INTO trip_stop_activities (trip_id, trip_stop_id, activity_id, activity_date)
+      VALUES ($1, $2, $3, $4) RETURNING *
+    `, [tripId, stopId, activityId, activityDate]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Add activity error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ==========================================
+// PHASE 4: COMMUNITY SHARING & DISCOVERABILITY
+// ==========================================
+
+app.get('/api/public/trips', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT t.*, u.first_name || ' ' || u.last_name as author_name,
+      (SELECT COUNT(*) FROM trip_stops WHERE trip_id = t.id) as stop_count,
+      (SELECT SUM(a.estimated_cost) FROM trip_stop_activities tsa JOIN activities a ON tsa.activity_id = a.id WHERE tsa.trip_id = t.id) as total_cost
+      FROM trips t
+      JOIN users u ON t.user_id = u.id
+      WHERE t.is_public = true
+      ORDER BY t.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.patch('/api/trips/:id/publish', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isPublic } = req.body;
+    const userId = req.user.id;
+    
+    const result = await db.query(
+      'UPDATE trips SET is_public = $1 WHERE id = $2 AND user_id = $3 RETURNING *',
+      [isPublic, id, userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Trip not found or not owned by user' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.post('/api/trips/:id/duplicate', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    await db.query('BEGIN');
+    const tripRes = await db.query('SELECT * FROM trips WHERE id = $1', [id]);
+    if (tripRes.rows.length === 0) throw new Error("Trip not found");
+    const ot = tripRes.rows[0];
+    
+    const newTripRes = await db.query(`
+      INSERT INTO trips (user_id, title, description, start_date, end_date, budget_range, status, is_public, cover_image_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+    `, [userId, `Copy of ${ot.title}`, ot.description, ot.start_date, ot.end_date, ot.budget_range, 'upcoming', false, ot.cover_image_url]);
+    const newTripId = newTripRes.rows[0].id;
+    
+    const stopsRes = await db.query('SELECT * FROM trip_stops WHERE trip_id = $1', [id]);
+    for (const stop of stopsRes.rows) {
+      const newStopRes = await db.query(`
+        INSERT INTO trip_stops (trip_id, city_id, stop_order, arrival_date, departure_date)
+        VALUES ($1, $2, $3, $4, $5) RETURNING id
+      `, [newTripId, stop.city_id, stop.stop_order, stop.arrival_date, stop.departure_date]);
+      const newStopId = newStopRes.rows[0].id;
+      
+      const actsRes = await db.query('SELECT * FROM trip_stop_activities WHERE trip_stop_id = $1', [stop.id]);
+      for (const act of actsRes.rows) {
+        await db.query(`
+          INSERT INTO trip_stop_activities (trip_id, trip_stop_id, activity_id, activity_date, start_time)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [newTripId, newStopId, act.activity_id, act.activity_date, act.start_time]);
+      }
+    }
+    
+    await db.query('COMMIT');
+    res.status(201).json({ id: newTripId });
+  } catch (error) {
+    await db.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
   }
 });
 

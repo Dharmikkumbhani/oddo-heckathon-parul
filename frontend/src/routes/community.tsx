@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import AppLayout from "@/components/AppLayout";
 import { Btn, Card, Chip } from "@/components/ui-kit";
 import { Search, Heart, Bookmark, MapPin, Calendar, Wallet, TrendingUp } from "lucide-react";
@@ -11,16 +12,23 @@ export const Route = createFileRoute("/community")({
   component: CommunityPage,
 });
 
-const trips = [
-  { title: "7 days in Vietnam under $700", author: "@minh.t", dest: "Hanoi · Hội An · Saigon", days: "7d", budget: "$$", desc: "Street food, sleeper trains and beach evenings on a backpacker budget.", img: "https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=900&q=70", saves: "2.1k" },
-  { title: "Solo female travel · Kyoto", author: "@ren_walks", dest: "Kyoto · Nara", days: "6d", budget: "$$", desc: "Temple mornings, slow lunches and safe night walks. Tested ryokan picks.", img: "https://images.unsplash.com/photo-1545569341-9eb8b30979d9?auto=format&fit=crop&w=900&q=70", saves: "1.8k" },
-  { title: "Pacific Coast family road trip", author: "@thelongway", dest: "Seattle → San Diego", days: "14d", budget: "$$$", desc: "Two adults, two kids, one campervan. Full route with stops every 3 hours.", img: "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=900&q=70", saves: "1.4k" },
-  { title: "Iceland ring road in winter", author: "@fjordfan", dest: "Reykjavík → Akureyri loop", days: "10d", budget: "$$$", desc: "Northern lights chase with daily backup plans for weather.", img: "https://images.unsplash.com/photo-1500468756762-a401b6f17b46?auto=format&fit=crop&w=900&q=70", saves: "1.2k" },
-  { title: "Marrakech weekend escape", author: "@zara.rides", dest: "Marrakech", days: "3d", budget: "$", desc: "Riads, souks and a quick desert overnight. Perfect long-weekend pacing.", img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?auto=format&fit=crop&w=900&q=70", saves: "980" },
-  { title: "Patagonia trekkers' guide", author: "@trail_jen", dest: "El Chaltén · Torres del Paine", days: "12d", budget: "$$$", desc: "W-trek prep, gear list, hut bookings and weather backup days.", img: "https://images.unsplash.com/photo-1531176175280-33e81b2294dd?auto=format&fit=crop&w=900&q=70", saves: "920" },
-];
-
 function CommunityPage() {
+  const [trips, setTrips] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTrips = async () => {
+      try {
+        const res = await fetch("http://localhost:5000/api/public/trips");
+        if (res.ok) setTrips(await res.json());
+      } catch (e) {
+        console.error("Failed to load community trips:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTrips();
+  }, []);
   return (
     <AppLayout title="Explore community trips" subtitle="Find inspiration from real itineraries shared by travelers">
       <Card className="overflow-hidden mb-8">
@@ -64,34 +72,40 @@ function CommunityPage() {
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {trips.map((t, i) => (
-          <Card key={i} className="overflow-hidden hover:shadow-elegant transition group">
-            <div className="relative h-44">
-              <img src={t.img} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-              <button className="absolute top-3 right-3 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur"><Bookmark className="h-3.5 w-3.5" /></button>
-              <div className="absolute bottom-3 left-3 flex gap-1.5">
-                <span className="text-[10px] font-bold bg-white/95 text-foreground px-2 py-1 rounded-full">{t.days}</span>
-                <span className="text-[10px] font-bold bg-white/95 text-foreground px-2 py-1 rounded-full">{t.budget}</span>
-              </div>
-            </div>
-            <div className="p-5">
-              <h3 className="font-display text-lg font-semibold leading-tight">{t.title}</h3>
-              <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><MapPin className="h-3 w-3" /> {t.dest}</div>
-              <p className="text-sm text-muted-foreground mt-3 line-clamp-2">{t.desc}</p>
-              <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-7 w-7 rounded-full bg-gradient-sunset" />
-                  <span className="text-xs font-semibold">{t.author}</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> {t.saves}</span>
+        {loading ? (
+          <div className="col-span-full py-20 text-center text-muted-foreground">Loading community trips...</div>
+        ) : trips.length === 0 ? (
+          <div className="col-span-full py-20 text-center text-muted-foreground">No public trips available yet. Be the first to share one!</div>
+        ) : trips.map((t) => {
+          const days = t.start_date && t.end_date ? Math.max(1, Math.ceil((new Date(t.end_date).getTime() - new Date(t.start_date).getTime()) / (1000 * 3600 * 24))) : '?';
+          const imgUrl = t.cover_image_url ? `http://localhost:5000${t.cover_image_url}` : "https://images.unsplash.com/photo-1524850011238-e3d235c7d4c9?auto=format&fit=crop&w=900&q=70";
+          return (
+            <Card key={t.id} className="overflow-hidden hover:shadow-elegant transition group flex flex-col">
+              <div className="relative h-44 shrink-0">
+                <img src={imgUrl} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <div className="absolute bottom-3 left-3 flex gap-1.5">
+                  <span className="text-[10px] font-bold bg-white/95 text-foreground px-2 py-1 rounded-full">{days}d</span>
+                  <span className="text-[10px] font-bold bg-white/95 text-foreground px-2 py-1 rounded-full">${t.budget_range || 0}</span>
                 </div>
               </div>
-              <Btn asChild variant="outline" className="w-full mt-4" size="sm"><Link to="/shared">View itinerary</Link></Btn>
-            </div>
-          </Card>
-        ))}
+              <div className="p-5 flex-1 flex flex-col">
+                <h3 className="font-display text-lg font-semibold leading-tight">{t.title}</h3>
+                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><MapPin className="h-3 w-3" /> {t.stop_count || 0} stops</div>
+                <p className="text-sm text-muted-foreground mt-3 line-clamp-2 flex-1">{t.description || "A wonderful journey."}</p>
+                <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-full bg-gradient-sunset" />
+                    <span className="text-xs font-semibold">@{t.author_name}</span>
+                  </div>
+                </div>
+                <Btn asChild variant="outline" className="w-full mt-4" size="sm">
+                   <Link to="/shared" search={{ tripId: t.id }}>View itinerary</Link>
+                </Btn>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       <Card className="p-6 mt-10">

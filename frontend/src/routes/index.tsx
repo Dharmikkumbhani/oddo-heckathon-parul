@@ -39,7 +39,8 @@ function Dashboard() {
             dates: `${t.start_date ? new Date(t.start_date).toLocaleDateString() : 'TBD'} - ${t.end_date ? new Date(t.end_date).toLocaleDateString() : 'TBD'}`,
             budget: `$${t.budget_range || 0}`,
             status: t.status ? t.status.charAt(0).toUpperCase() + t.status.slice(1) : "Draft",
-            overview: t.description || ""
+            overview: t.description || "",
+            is_public: t.is_public
           }));
           setMyTrips(mapped);
         }
