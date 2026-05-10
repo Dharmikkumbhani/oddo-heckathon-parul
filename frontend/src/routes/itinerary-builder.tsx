@@ -22,6 +22,7 @@ function ItineraryBuilder() {
   const [stops, setStops] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [draggedStopIdx, setDraggedStopIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!tripId) {
@@ -48,6 +49,55 @@ function ItineraryBuilder() {
     fetchData();
   }, [tripId]);
 
+  const handleDeleteStop = async (stopId: string) => {
+    if (!confirm("Are you sure you want to delete this stop?")) return;
+    const token = localStorage.getItem("token");
+    try {
+      await fetch(`http://localhost:5000/api/stops/${stopId}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+      setStops(stops.filter(s => s.id !== stopId));
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteActivity = async (actId: string) => {
+    if (!confirm("Are you sure you want to remove this activity?")) return;
+    const token = localStorage.getItem("token");
+    try {
+      await fetch(`http://localhost:5000/api/activities/${actId}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+      setActivities(activities.filter(a => a.id !== actId));
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedStopIdx(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedStopIdx === null || draggedStopIdx === index) return;
+
+    const newStops = [...stops];
+    const draggedStop = newStops[draggedStopIdx];
+    newStops.splice(draggedStopIdx, 1);
+    newStops.splice(index, 0, draggedStop);
+    setStops(newStops);
+    setDraggedStopIdx(null);
+
+    const stopIds = newStops.map(s => s.id);
+    const token = localStorage.getItem("token");
+    try {
+      await fetch(`http://localhost:5000/api/trips/${tripId}/stops/reorder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ stopIds })
+      });
+    } catch (e) { console.error(e); }
+  };
+
   if (loading) return <AppLayout title="Loading..."><div className="p-10 text-center text-muted-foreground">Loading itinerary...</div></AppLayout>;
   if (!tripId || !trip) return <AppLayout title="Error"><div className="p-10 text-center">Please select a valid trip from the Dashboard.</div></AppLayout>;
 
@@ -69,7 +119,7 @@ function ItineraryBuilder() {
       subtitle="Drag to reorder · Add stops, activities and notes"
       actions={<>
         <Btn variant="outline">Save draft</Btn>
-        <Btn asChild><Link to="/itinerary">Preview itinerary</Link></Btn>
+        <Btn asChild><Link to="/itinerary" search={{ tripId }}>Preview itinerary</Link></Btn>
       </>}
     >
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
@@ -98,9 +148,16 @@ function ItineraryBuilder() {
           )}
 
           {stopsWithActivities.map((s, i) => (
-            <Card key={s.id} className="overflow-hidden hover:border-primary/30 transition-colors">
+            <div 
+              key={s.id} 
+              className="bg-card border border-border rounded-2xl shadow-soft overflow-hidden hover:border-primary/30 transition-colors"
+              draggable
+              onDragStart={(e) => handleDragStart(e, i)}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, i)}
+            >
               <div className="p-5 flex items-start gap-4 border-b border-border bg-muted/30">
-                <div className="flex flex-col items-center pt-1">
+                <div className="flex flex-col items-center pt-1 cursor-grab active:cursor-grabbing">
                   <button className="h-7 w-7 rounded-md grid place-items-center hover:bg-card text-muted-foreground"><GripVertical className="h-4 w-4" /></button>
                   <div className="h-9 w-9 rounded-full bg-gradient-ocean grid place-items-center text-white text-xs font-bold mt-1">{i + 1}</div>
                 </div>
@@ -114,7 +171,7 @@ function ItineraryBuilder() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Chip color="emerald">${s.cost}</Chip>
-                  <button className="h-8 w-8 rounded-lg grid place-items-center hover:bg-destructive/10 text-destructive"><Trash2 className="h-4 w-4" /></button>
+                  <button onClick={() => handleDeleteStop(s.id)} className="h-8 w-8 rounded-lg grid place-items-center hover:bg-destructive/10 text-destructive"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
               <div className="p-5 space-y-3">
@@ -133,7 +190,7 @@ function ItineraryBuilder() {
                           <div className="text-[11px] text-muted-foreground">{a.activity_date ? new Date(a.activity_date).toLocaleDateString() : 'Date TBD'}</div>
                         </div>
                         <span className="text-sm font-semibold">{Number(a.base_cost) === 0 ? "Free" : `$${a.base_cost}`}</span>
-                        <button className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition"><Trash2 className="h-4 w-4" /></button>
+                        <button onClick={() => handleDeleteActivity(a.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition"><Trash2 className="h-4 w-4" /></button>
                       </div>
                     );
                   })}
@@ -142,7 +199,7 @@ function ItineraryBuilder() {
                   )}
                 </div>
               </div>
-            </Card>
+            </div>
           ))}
 
           <Btn asChild variant="outline" className="w-full border-dashed p-5 h-auto text-primary border-2 border-border hover:border-primary hover:bg-primary/5">
@@ -195,3 +252,4 @@ function ItineraryBuilder() {
     </AppLayout>
   );
 }
+

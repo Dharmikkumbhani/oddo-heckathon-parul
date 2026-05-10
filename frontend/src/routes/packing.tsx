@@ -1,64 +1,115 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import AppLayout from "@/components/AppLayout";
 import { Btn, Card, Chip } from "@/components/ui-kit";
 import { Plus, Shirt, FileText, Smartphone, Sparkles, Heart, Trash2, RotateCcw } from "lucide-react";
 
+type PackingSearch = { tripId?: string };
+
 export const Route = createFileRoute("/packing")({
+  validateSearch: (search: Record<string, unknown>): PackingSearch => ({ tripId: search.tripId as string | undefined }),
   head: () => ({ meta: [{ title: "Packing checklist — Traveloop" }, { name: "description", content: "Pack smart with categorized checklists." }] }),
   component: PackingPage,
 });
 
-const initial = {
-  Clothing: [
-    { name: "T-shirts × 5", packed: true },
-    { name: "Light jacket", packed: true },
-    { name: "Walking shoes", packed: true },
-    { name: "Swimwear", packed: false },
-    { name: "Socks × 7", packed: false },
-  ],
-  Documents: [
-    { name: "Passport", packed: true },
-    { name: "Visa printouts", packed: true },
-    { name: "Flight tickets", packed: false },
-    { name: "Travel insurance", packed: false },
-  ],
-  Electronics: [
-    { name: "Phone charger", packed: true },
-    { name: "Universal adapter", packed: false },
-    { name: "Power bank", packed: false },
-    { name: "Camera", packed: false },
-  ],
-  Toiletries: [
-    { name: "Toothbrush & paste", packed: true },
-    { name: "Sunscreen SPF 50", packed: false },
-    { name: "Skincare basics", packed: false },
-  ],
-  Essentials: [
-    { name: "Reusable water bottle", packed: true },
-    { name: "Cash · ¥10,000", packed: false },
-    { name: "Daypack", packed: false },
-  ],
-};
-
-const icons: Record<string, any> = { Clothing: Shirt, Documents: FileText, Electronics: Smartphone, Toiletries: Sparkles, Essentials: Heart };
+const icons: Record<string, any> = { Clothing: Shirt, Documents: FileText, Electronics: Smartphone, Toiletries: Sparkles, Essentials: Heart, default: Sparkles };
 
 function PackingPage() {
-  const [items, setItems] = useState(initial);
-  const all = Object.values(items).flat();
-  const packed = all.filter(i => i.packed).length;
-  const total = all.length;
-  const pct = Math.round((packed / total) * 100);
+  const { tripId } = Route.useSearch();
+  const navigate = useNavigate();
+  const [itemsMap, setItemsMap] = useState<Record<string, any[]>>({});
+  const [newItemNames, setNewItemNames] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
 
-  const toggle = (cat: string, idx: number) => setItems((p) => ({
-    ...p, [cat]: p[cat as keyof typeof p].map((it, i) => i === idx ? { ...it, packed: !it.packed } : it),
-  }));
+  const fetchItems = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return setLoading(false);
+
+    if (!tripId) {
+      try {
+        const res = await fetch("http://localhost:5000/api/trips", { headers: { "Authorization": `Bearer ${token}` } });
+        if (res.ok) {
+          const trips = await res.json();
+          if (trips.length > 0) return navigate({ search: { tripId: trips[0].id }, replace: true });
+        }
+      } catch (e) { console.error(e); }
+      return setLoading(false);
+    }
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/packing`, { headers: { "Authorization": `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        const grouped: Record<string, any[]> = {};
+        // Ensure default categories exist
+        ["Clothing", "Documents", "Electronics", "Toiletries", "Essentials"].forEach(c => grouped[c] = []);
+        
+        data.forEach((item: any) => {
+          const cat = item.category_name || "Essentials";
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push(item);
+        });
+        setItemsMap(grouped);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    fetchItems();
+  }, [tripId]);
+
+  const all = Object.values(itemsMap).flat();
+  const packed = all.filter(i => i.is_packed).length;
+  const total = all.length;
+  const pct = total === 0 ? 0 : Math.round((packed / total) * 100);
+
+  const toggle = async (id: string, cat: string) => {
+    // Optimistic update
+    setItemsMap(p => ({
+      ...p, [cat]: p[cat].map(it => it.id === id ? { ...it, is_packed: !it.is_packed } : it)
+    }));
+    const token = localStorage.getItem("token");
+    await fetch(`http://localhost:5000/api/packing/${id}/toggle`, { method: "PUT", headers: { "Authorization": `Bearer ${token}` } });
+  };
+
+  const remove = async (id: string, cat: string) => {
+    setItemsMap(p => ({
+      ...p, [cat]: p[cat].filter(it => it.id !== id)
+    }));
+    const token = localStorage.getItem("token");
+    await fetch(`http://localhost:5000/api/packing/${id}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+  };
+
+  const add = async (cat: string) => {
+    const name = newItemNames[cat]?.trim();
+    if (!name) return;
+    
+    setNewItemNames(p => ({ ...p, [cat]: "" }));
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/packing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ itemName: name, categoryName: cat })
+      });
+      if (res.ok) {
+        const newItem = await res.json();
+        setItemsMap(p => ({
+          ...p, [cat]: [...p[cat], newItem]
+        }));
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  if (loading) return <AppLayout title="Loading..."><div className="p-10 text-center text-muted-foreground">Loading checklist...</div></AppLayout>;
+  if (!tripId) return <AppLayout title="Error"><div className="p-10 text-center">Please select a valid trip from the Dashboard.</div></AppLayout>;
 
   return (
     <AppLayout
       title="Packing checklist"
-      subtitle="Wonders of Japan · 12 days"
-      actions={<><Btn variant="outline"><RotateCcw className="h-4 w-4" /> Reset</Btn><Btn>Save list</Btn></>}
+      subtitle="Keep track of your items before you fly"
+      actions={<><Btn variant="outline" onClick={fetchItems}><RotateCcw className="h-4 w-4" /> Refresh</Btn></>}
     >
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div className="space-y-5">
@@ -78,9 +129,9 @@ function PackingPage() {
             </div>
           </Card>
 
-          {Object.entries(items).map(([cat, list]) => {
-            const Icon = icons[cat];
-            const cp = list.filter(i => i.packed).length;
+          {Object.entries(itemsMap).map(([cat, list]) => {
+            const Icon = icons[cat] || icons.default;
+            const cp = list.filter(i => i.is_packed).length;
             return (
               <Card key={cat} className="overflow-hidden">
                 <div className="px-5 py-4 flex items-center justify-between border-b border-border bg-muted/30">
@@ -91,19 +142,25 @@ function PackingPage() {
                       <div className="text-xs text-muted-foreground">{cp} of {list.length} packed</div>
                     </div>
                   </div>
-                  <Chip color={cp === list.length ? "emerald" : "default"} active={cp === list.length}>{cp === list.length ? "Complete" : `${list.length - cp} left`}</Chip>
+                  <Chip color={list.length > 0 && cp === list.length ? "emerald" : "default"} active={list.length > 0 && cp === list.length}>{list.length > 0 && cp === list.length ? "Complete" : `${list.length - cp} left`}</Chip>
                 </div>
                 <div className="divide-y divide-border">
-                  {list.map((it, i) => (
-                    <label key={i} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/40 cursor-pointer group">
-                      <input type="checkbox" checked={it.packed} onChange={() => toggle(cat, i)} className="h-4 w-4 rounded accent-primary" />
-                      <span className={`flex-1 text-sm ${it.packed ? "line-through text-muted-foreground" : ""}`}>{it.name}</span>
-                      <button className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition"><Trash2 className="h-4 w-4" /></button>
+                  {list.map((it) => (
+                    <label key={it.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/40 cursor-pointer group">
+                      <input type="checkbox" checked={it.is_packed} onChange={() => toggle(it.id, cat)} className="h-4 w-4 rounded accent-primary" />
+                      <span className={`flex-1 text-sm ${it.is_packed ? "line-through text-muted-foreground" : ""}`}>{it.item_name}</span>
+                      <button onClick={(e) => { e.preventDefault(); remove(it.id, cat); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition"><Trash2 className="h-4 w-4" /></button>
                     </label>
                   ))}
                   <div className="flex items-center gap-2 px-5 py-3">
-                    <input placeholder={`Add to ${cat.toLowerCase()}…`} className="flex-1 h-9 px-3 rounded-lg bg-muted/50 border border-transparent focus:bg-card focus:border-ring outline-none text-sm" />
-                    <Btn size="sm" variant="soft"><Plus className="h-3.5 w-3.5" /> Add</Btn>
+                    <input 
+                      placeholder={`Add to ${cat.toLowerCase()}…`} 
+                      value={newItemNames[cat] || ''}
+                      onChange={e => setNewItemNames(p => ({ ...p, [cat]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') add(cat); }}
+                      className="flex-1 h-9 px-3 rounded-lg bg-muted/50 border border-transparent focus:bg-card focus:border-ring outline-none text-sm" 
+                    />
+                    <Btn size="sm" variant="soft" onClick={() => add(cat)}><Plus className="h-3.5 w-3.5" /> Add</Btn>
                   </div>
                 </div>
               </Card>
@@ -113,13 +170,13 @@ function PackingPage() {
 
         <aside>
           <Card className="p-5 sticky top-32">
-            <h3 className="font-display text-lg font-semibold">Suggested for Japan</h3>
+            <h3 className="font-display text-lg font-semibold">Suggested items</h3>
             <p className="text-xs text-muted-foreground mt-1">Travelers commonly add these items.</p>
             <div className="mt-4 space-y-2">
-              {["Slip-on shoes (temples)","Pocket Wi-Fi rental","Yen cash for small shops","Compact umbrella","JR Pass voucher","Travel chopsticks"].map((t) => (
+              {["Slip-on shoes","Pocket Wi-Fi rental","Cash for small shops","Compact umbrella","Travel chopsticks"].map((t) => (
                 <div key={t} className="flex items-center justify-between p-2.5 rounded-lg border border-dashed border-border hover:border-primary/40 hover:bg-primary/5 transition">
                   <span className="text-sm">{t}</span>
-                  <button className="h-7 w-7 rounded-md bg-primary/10 text-primary grid place-items-center"><Plus className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => { setNewItemNames(p => ({...p, Essentials: t})); setTimeout(() => add("Essentials"), 50); }} className="h-7 w-7 rounded-md bg-primary/10 text-primary grid place-items-center"><Plus className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
             </div>

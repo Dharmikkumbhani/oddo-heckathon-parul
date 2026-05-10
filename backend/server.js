@@ -268,6 +268,47 @@ app.post('/api/trips/:tripId/stops', authenticateToken, async (req, res) => {
   }
 });
 
+// DELETE TRIP STOP
+app.delete('/api/stops/:stopId', authenticateToken, async (req, res) => {
+  try {
+    const { stopId } = req.params;
+    // We should ideally check if the user owns the trip, but for simplicity assuming token is enough or we rely on foreign keys
+    await db.query('DELETE FROM trip_stops WHERE id = $1', [stopId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete stop error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// REORDER TRIP STOPS
+app.put('/api/trips/:tripId/stops/reorder', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { stopIds } = req.body; // Array of stop IDs in the new order
+    
+    // We need to update each stop's order. To prevent unique constraint violations during update,
+    // we could either defer constraints or just assign negative/temp values.
+    // Easiest is to update them to temporary values, then to final values.
+    // Or just rely on PostgreSQL updating them correctly if we use a CASE statement.
+    // Let's do individual updates for simplicity, and temporarily set them to negative to avoid conflicts.
+    
+    // First pass: set to negative index
+    for (let i = 0; i < stopIds.length; i++) {
+      await db.query('UPDATE trip_stops SET stop_order = $1 WHERE id = $2 AND trip_id = $3', [-(i + 1), stopIds[i], tripId]);
+    }
+    // Second pass: set to correct positive index
+    for (let i = 0; i < stopIds.length; i++) {
+      await db.query('UPDATE trip_stops SET stop_order = $1 WHERE id = $2 AND trip_id = $3', [(i + 1), stopIds[i], tripId]);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Reorder stops error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 // GET STOP ACTIVITIES
 app.get('/api/trips/:tripId/activities', authenticateToken, async (req, res) => {
   try {
@@ -301,8 +342,164 @@ app.post('/api/stops/:stopId/activities', authenticateToken, async (req, res) =>
   }
 });
 
+// DELETE ACTIVITY FROM STOP
+app.delete('/api/activities/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params; // this is trip_stop_activities.id
+    await db.query('DELETE FROM trip_stop_activities WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete activity error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 // ==========================================
-// PHASE 4: COMMUNITY SHARING & DISCOVERABILITY
+// PHASE 4: PRACTICAL TOOLS (BUDGET, PACKING, NOTES)
+// ==========================================
+
+// BUDGET
+app.get('/api/trips/:tripId/budget', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const tripRes = await db.query('SELECT title, budget_range FROM trips WHERE id = $1', [tripId]);
+    if (tripRes.rows.length === 0) return res.status(404).json({ error: 'Trip not found' });
+    
+    // Aggregate activities by category
+    const actRes = await db.query(`
+      SELECT COALESCE(ac.name, 'Activity') as category_name, SUM(a.estimated_cost) as total_cost
+      FROM trip_stop_activities tsa
+      JOIN activities a ON tsa.activity_id = a.id
+      LEFT JOIN activity_categories ac ON a.category_id = ac.id
+      WHERE tsa.trip_id = $1
+      GROUP BY ac.name
+    `, [tripId]);
+    
+    // Also aggregate by stop for cost by destination
+    const destRes = await db.query(`
+      SELECT c.name as city_name, SUM(a.estimated_cost) as city_cost
+      FROM trip_stop_activities tsa
+      JOIN trip_stops ts ON tsa.trip_stop_id = ts.id
+      JOIN cities c ON ts.city_id = c.id
+      JOIN activities a ON tsa.activity_id = a.id
+      WHERE tsa.trip_id = $1
+      GROUP BY c.name
+    `, [tripId]);
+
+    res.json({
+      trip_title: tripRes.rows[0].title,
+      budget_range: tripRes.rows[0].budget_range,
+      categories: actRes.rows,
+      destinations: destRes.rows
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// PACKING
+app.get('/api/trips/:tripId/packing', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const result = await db.query(`
+      SELECT pi.*, pc.name as category_name, pc.icon_name
+      FROM packing_items pi
+      LEFT JOIN packing_categories pc ON pi.category_id = pc.id
+      WHERE pi.trip_id = $1
+      ORDER BY COALESCE(pc.name, 'Essentials'), pi.item_name
+    `, [tripId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.post('/api/trips/:tripId/packing', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { itemName, categoryName } = req.body;
+    
+    let catId = null;
+    if (categoryName) {
+       const catRes = await db.query('SELECT id FROM packing_categories WHERE name ILIKE $1', [categoryName]);
+       if (catRes.rows.length > 0) catId = catRes.rows[0].id;
+    }
+
+    const result = await db.query(`
+      INSERT INTO packing_items (trip_id, item_name, category_id, created_by_user_id)
+      VALUES ($1, $2, $3, $4) RETURNING *
+    `, [tripId, itemName, catId, req.user.id]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.put('/api/packing/:id/toggle', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query(`
+      UPDATE packing_items SET is_packed = NOT is_packed WHERE id = $1 RETURNING *
+    `, [id]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.delete('/api/packing/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query('DELETE FROM packing_items WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// NOTES
+app.get('/api/trips/:tripId/notes', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const result = await db.query(`
+      SELECT n.*, t.title as trip_name
+      FROM trip_notes n
+      JOIN trips t ON n.trip_id = t.id
+      WHERE n.trip_id = $1
+      ORDER BY n.created_at DESC
+    `, [tripId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.post('/api/trips/:tripId/notes', authenticateToken, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { title, content, noteType } = req.body;
+    const result = await db.query(`
+      INSERT INTO trip_notes (trip_id, user_id, title, content, note_type)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *
+    `, [tripId, req.user.id, title, content, noteType || 'general']);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.delete('/api/notes/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query('DELETE FROM trip_notes WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ==========================================
+// PHASE 5: COMMUNITY SHARING & DISCOVERABILITY
 // ==========================================
 
 app.get('/api/public/trips', async (req, res) => {

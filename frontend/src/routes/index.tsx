@@ -140,12 +140,12 @@ function Dashboard() {
       <SectionHeader title="Quick actions" subtitle="Jump back into trip planning" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
         {[
-          { to: "/create-trip", icon: Plus, label: "New Trip", color: "bg-gradient-ocean text-white" },
-          { to: "/cities", icon: Compass, label: "Find Cities", color: "bg-coral/10 text-coral" },
-          { to: "/budget", icon: Wallet, label: "View Budget", color: "bg-emerald/10 text-emerald" },
-          { to: "/packing", icon: Luggage, label: "Packing List", color: "bg-sunset/10 text-sunset" },
+          { to: "/create-trip", icon: Plus, label: "New Trip", color: "bg-gradient-ocean text-white", search: {} },
+          { to: "/cities", icon: Compass, label: "Find Cities", color: "bg-coral/10 text-coral", search: myTrips.length > 0 ? { tripId: myTrips[0].id } : {} },
+          { to: "/budget", icon: Wallet, label: "View Budget", color: "bg-emerald/10 text-emerald", search: myTrips.length > 0 ? { tripId: myTrips[0].id } : {} },
+          { to: "/packing", icon: Luggage, label: "Packing List", color: "bg-sunset/10 text-sunset", search: myTrips.length > 0 ? { tripId: myTrips[0].id } : {} },
         ].map((a) => (
-          <Link key={a.to} to={a.to} className="group">
+          <Link key={a.to} to={a.to} search={a.search} className="group">
             <Card className="p-5 hover:shadow-elegant transition-all">
               <div className={`h-10 w-10 rounded-xl grid place-items-center ${a.color}`}><a.icon className="h-5 w-5" /></div>
               <div className="mt-4 flex items-center justify-between">
@@ -181,7 +181,7 @@ function Dashboard() {
                     <div className="h-2 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-ocean rounded-full" style={{ width: "10%" }} /></div>
                   </div>
                   <div className="flex gap-2">
-                    <Btn asChild className="flex-1"><Link to="/itinerary">Open itinerary</Link></Btn>
+                    <Btn asChild className="flex-1"><Link to="/itinerary" search={{ tripId: myTrips[0].id }}>Open itinerary</Link></Btn>
                     <Btn variant="outline">Share</Btn>
                   </div>
                 </div>
@@ -214,7 +214,9 @@ function Dashboard() {
                 </div>
               ))}
             </div>
-            <Btn asChild variant="outline" size="sm" className="w-full mt-5"><Link to="/budget">Open budget</Link></Btn>
+            <Btn asChild variant="outline" size="sm" className="w-full mt-5">
+              <Link to="/budget" search={myTrips.length > 0 ? { tripId: myTrips[0].id } : {}}>Open budget</Link>
+            </Btn>
           </Card>
         </div>
       </div>
